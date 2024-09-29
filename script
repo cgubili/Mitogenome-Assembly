@@ -1,1 +1,25 @@
+# Find and download the best reference mitogenome available on GenBank (fast format).
+# Map your raw reads to the reference mitogenome
+minimap2 -ax map-ont -t 12 path_to_Reference_mitogenome/Reg_mit.fasta path_to_rawdata/species.fastq.gz > path_to_output_directory/mapped_reads.sam
 
+# Filter for aligned reads and convert to fastq for flye input.
+samtools view -b -F 4 path_to_output_directory/mapped_reads.sam > path_to_output_directory/mapped_reads.aln.bam 
+bamToFastq -i path_to_output_directory/mapped_reads.aln.bam -fq path_to_output_directory/mapped_reads.aln.fq
+
+# Convert the fq files to fasta format
+seqkit fq2fa path_to_output_directory/mapped_reads.aln.fq -o path_to_output_directory/mapped_reads.aln.fa
+
+# Remove all empty entries
+awk 'BEGIN {RS = ">" ; FS = "\n" ; ORS = ""} {if ($2) print ">"$0}' path_to_output_directory/mapped_reads.aln.fa > path_to_output_directory/mapped_reads.aln.NoEmpty.fa
+
+# Remove duplicate entries
+awk '/^>/{f=!d[$1];d[$1]=1}f' path_to_output_directory/mapped_reads.aln.NoEmpty.fa > path_to_output_directory/mapped_reads.aln.clean.fa
+
+# Generate consensus with flye.
+flye --nano-hq path_to_output_directory/mapped_reads.aln.clean.fa --out-dir flye-mitogenome --genome-size 17k --threads 12 --meta
+
+# Polish consensus. First make a new directory (path_to_polished_data/polished), then realign the reads to the mitogenome consensus
+minimap2 -ax map-ont -t 14 flye-mitogenome/assembly.fasta path_to_rawdata/species.fastq.gz > path_to_polished_data/polished/species_consensus1.sam
+racon -t 16 path_to_rawdata/species.fastq.gz path_to_polished_data/polished/species_consensus1.sam flye-mitogenome/assembly.fasta > path_to_polished_data/polished/species_consensus1.racon1.fasta
+
+# Repeat polishing steps! Maximum 3 times, there is no need for more steps.
